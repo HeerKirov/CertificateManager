@@ -1,0 +1,22 @@
+URL_PREFIX = 'manager/'
+
+DEBUG = True
+SECRET_KEY = '8kiu2^2i7=gk-ekp*u3fn1u!l51^w8+ikx2uz$il#z(u04h$nq'
+
+DATABASE = {
+    'DATABASE': 'certificate_manager',
+    'USERNAME': 'postgres',
+    'PASSWORD': '',
+    'HOST': 'localhost',
+    'PORT': '5432'
+}
+
+INITIAL_ADMIN_USER = {
+    'username': 'admin',
+    'password': 'admin',
+    'name': 'Administrator'
+}
+
+IMAGE_STORAGE = {
+    'FILEPATH': 'image'
+}
