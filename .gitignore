@@ -1,5 +1,5 @@
 /.idea
 /venv
 /static/image/
-/.config.py
-/.markdown
+/config.py
+/*.markdown
