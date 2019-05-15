@@ -69,7 +69,7 @@ class Auth:
 class Student:
     class Record(serializers.ModelSerializer):
         id = serializers.IntegerField(read_only=True)
-        works_name = serializers.CharField(max_length=128, allow_null=True)
+        works_name = serializers.CharField(max_length=128, allow_null=True, allow_blank=True)
         award_level = serializers.CharField(max_length=32, allow_null=False)
         update_time = serializers.DateTimeField(read_only=True)
         teacher = serializers.SlugRelatedField(slug_field='card_id', queryset=app_models.Teacher.objects)
@@ -151,6 +151,37 @@ class Student:
         class Meta:
             model = app_models.Image
             fields = ('id', 'category', 'file', 'award_record', 'recognition')
+
+    class Class(serializers.ModelSerializer):
+        grade = serializers.IntegerField(read_only=True)
+        number = serializers.IntegerField(read_only=True)
+        subject = serializers.SlugRelatedField(slug_field='name', read_only=True)
+        college = serializers.CharField(source='college_name')
+
+        class Meta:
+            model = app_models.Class
+            fields = ('grade', 'number', 'subject', 'college')
+
+    class Student(serializers.ModelSerializer):
+        card_id = serializers.CharField(read_only=True)
+        name = serializers.CharField(read_only=True)
+        clazz = serializers.PrimaryKeyRelatedField(read_only=True)
+        clazz_grade = serializers.IntegerField(read_only=True)
+        clazz_number = serializers.IntegerField(read_only=True)
+        subject = serializers.CharField(source='subject_name', read_only=True)
+        college = serializers.CharField(source='college_name', read_only=True)
+
+        class Meta:
+            model = app_models.Student
+            fields = ('card_id', 'name', 'clazz', 'clazz_grade', 'clazz_number', 'subject', 'college')
+
+    class Teacher(serializers.ModelSerializer):
+        card_id = serializers.CharField(read_only=True)
+        name = serializers.CharField(read_only=True)
+
+        class Meta:
+            model = app_models.Teacher
+            fields = ('card_id', 'name')
 
 
 class Admin:
@@ -255,20 +286,24 @@ class Admin:
     class User(serializers.Serializer):
         user_type = serializers.ChoiceField(enums.USER_TYPE, allow_null=False, write_only=True)
         username = serializers.CharField(max_length=32, allow_null=False)
-        password = serializers.CharField(max_length=256, allow_null=False, allow_blank=False, required=False, write_only=True)
-        name = serializers.CharField(max_length=30, allow_null=False, allow_blank=False, required=False, source='first_name')
+        password = serializers.CharField(max_length=256, allow_null=True, allow_blank=False, required=False, write_only=True)
+        name = serializers.CharField(max_length=30, allow_null=True, allow_blank=False, required=False, source='first_name')
+        date_joined = serializers.DateTimeField(read_only=True)
+        last_login = serializers.DateTimeField(read_only=True)
 
         class Meta:
-            fields = ('user_type', 'username', 'password', 'name')
+            fields = ('user_type', 'username', 'password', 'name', 'date_joined', 'last_login')
 
     class UserDetail(serializers.ModelSerializer):
         username = serializers.CharField(read_only=True)
-        password = serializers.CharField(max_length=256, allow_null=False, allow_blank=False, write_only=True)
-        name = serializers.CharField(read_only=True, source='first_name')
+        password = serializers.CharField(max_length=256, allow_null=False, allow_blank=False, write_only=True, required=False)
+        name = serializers.CharField(max_length=30, allow_null=False, allow_blank=False, source='first_name')
+        date_joined = serializers.DateTimeField(read_only=True)
+        last_login = serializers.DateTimeField(read_only=True)
 
         class Meta:
             model = app_models.User
-            fields = ('username', 'password', 'name')
+            fields = ('username', 'password', 'name', 'date_joined', 'last_login')
 
     class Record(serializers.ModelSerializer):
         id = serializers.IntegerField(read_only=True)
@@ -277,7 +312,11 @@ class Admin:
         update_time = serializers.DateTimeField(read_only=True)
         teacher = serializers.SlugRelatedField(slug_field='card_id', read_only=True)
         students = serializers.SlugRelatedField(slug_field='card_id', many=True, read_only=True)
-        main_student = serializers.SlugRelatedField(slug_field='card_id', many=True, read_only=True)
+        main_student = serializers.SlugRelatedField(slug_field='card_id', read_only=True)
+
+        teacher_info = Field.Teacher(source='teacher', read_only=True)
+        students_info = Field.Student(source='students', many=True, read_only=True)
+        main_student_info = Field.Student(source='main_student', read_only=True)
 
         competition_name = serializers.CharField(read_only=True)
         competition_category = serializers.CharField(read_only=True)
@@ -312,26 +351,28 @@ class Admin:
                 rating_info = validated_data.pop('rating_info', None)
                 if competition is None and competition_record.competition is None:
                     if app_models.Competition.objects.filter(name=competition_record.name).exists():
-                        competition_record.competition = app_models.Competition.objects.filter(name=competition_record.name).first()
-                        competition_record.save()
+                        competition = app_models.Competition.objects.filter(name=competition_record.name).first()
                     elif rating_info is None:
                         raise exceptions.ValidationError('rating_info is necessary.')
                     else:
-                        competition_record.competition = app_models.Competition(name=competition_record.name,
-                                                                                category=competition_record.category,
-                                                                                hold_time=competition_record.hold_time,
-                                                                                organizer=competition_record.organizer,
-                                                                                rating_info=rating_info)
-                        competition_record.competition.save()
-                        competition_record.save()
-                elif competition is not None:
-                    competition_record.competition = competition
-                    competition_record.save()
+                        competition = app_models.Competition(name=competition_record.name,
+                                                             category=competition_record.category,
+                                                             hold_time=competition_record.hold_time,
+                                                             organizer=competition_record.organizer,
+                                                             rating_info=rating_info)
+                        competition.save()
+                competition_record.competition = competition
+                competition_record.name = competition.name
+                competition_record.category = competition.category
+                competition_record.organizer = competition.organizer
+                competition_record.hold_time = competition.hold_time
+                competition_record.save()
             return super().update(instance, validated_data)
 
         class Meta:
             model = app_models.AwardRecord
             fields = ('id', 'works_name', 'award_level', 'update_time', 'teacher', 'students', 'main_student',
+                      'students_info', 'main_student_info', 'teacher_info',
                       'competition_name', 'competition_category', 'hold_time', 'organizer',
                       'review_status', 'rating_category', 'rating_level_title', 'rating_level', 'images',
                       'competition', 'rating_info')

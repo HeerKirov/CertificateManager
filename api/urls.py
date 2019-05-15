@@ -10,6 +10,9 @@ router.register('auth/info', app_views.Auth.Info, base_name='api-user-info')
 
 router.register('student/records', app_views.Student.Record, base_name='api-student-record')
 router.register('student/images', app_views.Student.Image, base_name='api-student-image')
+router.register('student/classes', app_views.Student.Class, base_name='api-student-class')
+router.register('student/students', app_views.Student.Student, base_name='api-student-student')
+router.register('student/teachers', app_views.Student.Teacher, base_name='api-student-teacher')
 
 router.register('admin/users', app_views.Admin.User, base_name='api-admin-user-list')
 router.register('admin/users', app_views.Admin.UserDetail, base_name='api-admin-user-detail')

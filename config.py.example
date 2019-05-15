@@ -20,3 +20,9 @@ INITIAL_ADMIN_USER = {
 IMAGE_STORAGE = {
     'FILEPATH': 'image'
 }
+
+BAIDU_AIP = {
+    'APP_ID': '',
+    'API_KEY': '',
+    'SECRET_KEY': ''
+}

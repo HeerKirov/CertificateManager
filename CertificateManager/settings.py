@@ -149,4 +149,5 @@ STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
 STATIC_URL = '/%sstatic/' % (config.URL_PREFIX,)
+TEMP_DIRS = os.path.join(BASE_DIR, 'tmp')
 IMAGE_DIRS = os.path.join(BASE_DIR, 'static/' + config.IMAGE_STORAGE['FILEPATH'])

@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.contrib.auth import authenticate, login, logout
@@ -7,7 +7,7 @@ from rest_framework import viewsets, response, status, exceptions, permissions, 
 from rest_framework.decorators import action
 from rest_framework.authtoken.models import Token
 from . import exceptions as app_exceptions, serializers as app_serializers, models as app_models, permissions as app_permissions, services
-from . import enums
+from . import enums, filters as app_filters
 from CertificateManager.settings import IMAGE_DIRS
 import os
 import uuid
@@ -27,6 +27,8 @@ class Auth:
             user = authenticate(username='%s:%s' % (user_type, username), password=password)
             if user is not None:
                 login(request, user)
+                user.last_login = timezone.now()
+                user.save()
                 return response.Response(status=status.HTTP_200_OK)
             else:
                 raise exceptions.AuthenticationFailed()
@@ -52,6 +54,8 @@ class Auth:
             user = authenticate(username='%s:%s' % (user_type, username), password=password)
             if user is not None:
                 token, created = Token.objects.get_or_create(user=user)
+                user.last_login = timezone.now()
+                user.save()
                 return response.Response({'token': token.key}, status=status.HTTP_200_OK)
             raise exceptions.AuthenticationFailed()
 
@@ -74,7 +78,8 @@ class Student:
         serializer_class = app_serializers.Student.Record
         permission_classes = (app_permissions.IsStudent,)
         lookup_field = 'id'
-        filter_fields = ('review__status',)
+        filterset_class = app_filters.Record
+        ordering = '-update_time'
 
         def get_queryset(self):
             user = self.request.user
@@ -83,6 +88,14 @@ class Student:
         def perform_create(self, serializer):
             serializer.validated_data['submit_user'] = self.request.user
             super().perform_create(serializer)
+
+        def destroy(self, request, *args, **kwargs):
+            instance = self.get_object()
+            if hasattr(instance, 'review') and getattr(instance, 'review').status == enums.ReviewStatus.waiting:
+                instance.delete()
+                return response.Response(status=status.HTTP_204_NO_CONTENT)
+            else:
+                return response.Response(status=status.HTTP_403_FORBIDDEN)
 
     class Image(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
         queryset = app_models.Image.objects
@@ -138,6 +151,33 @@ class Student:
                 return filename[:p], filename[p + 1:]
             else:
                 return filename, ''
+
+    class Class(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+        queryset = app_models.Class.objects
+        serializer_class = app_serializers.Student.Class
+        permission_classes = (app_permissions.IsStudent,)
+        lookup_field = 'id'
+        filter_fields = ('grade', 'number', 'subject__name', 'subject__college__name')
+        search_fields = ('subject__name', 'grade', 'number')
+        ordering_fields = ('grade', 'number', 'subject__name', 'subject__college__name')
+
+    class Student(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+        queryset = app_models.Student.objects
+        serializer_class = app_serializers.Student.Student
+        permission_classes = (app_permissions.IsStudent,)
+        lookup_field = 'card_id'
+        filter_fields = ('card_id', 'name', 'clazz__grade', 'clazz__number', 'clazz__subject__name', 'clazz__subject__college__name')
+        search_fields = ('card_id', 'name', 'clazz__subject__name', 'clazz__subject__college__name')
+        ordering_fields = ('card_id', 'clazz__grade', 'clazz__number', 'clazz__subject__name', 'clazz__subject__college__name')
+
+    class Teacher(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+        queryset = app_models.Teacher.objects
+        serializer_class = app_serializers.Student.Teacher
+        permission_classes = (app_permissions.IsStudent,)
+        lookup_field = 'card_id'
+        filter_fields = ('card_id', 'name')
+        search_fields = ('card_id', 'name')
+        ordering_fields = ('card_id',)
 
 
 class Admin:
@@ -301,7 +341,7 @@ class Admin:
         queryset = app_models.Competition.objects
         serializer_class = app_serializers.Admin.Competition
         permission_classes = (app_permissions.IsStaff,)
-        lookup_field = 'id'
+        lookup_field = 'name'
         filter_fields = ('name', 'rating_info', 'category')
         ordering_fields = ('rating_info', 'category', 'hold_time')
         search_fields = ('name', 'organizer', 'category')
@@ -310,11 +350,13 @@ class Admin:
         queryset = app_models.User.objects
         serializer_class = app_serializers.Admin.User
         permission_classes = (app_permissions.IsStaff,)
+        filterset_class = app_filters.User
+        search_fields = ('username', 'first_name')
 
         def perform_create(self, serializer):
             user_type = serializer.validated_data.get('user_type')
             username = serializer.validated_data.get('username')
-            password = serializer.validated_data.get('password', username)
+            password = serializer.validated_data.get('password', None) or username
             name = serializer.validated_data.get('name', None)
             if user_type == enums.UserType.admin:
                 if name is None:
@@ -356,14 +398,27 @@ class Admin:
         lookup_field = 'username'
 
         def perform_update(self, serializer):
-            password = serializer.validated_data.get('password')
-            user = serializer.instance
-            user.set_password(password)
-            user.save()
+            password = serializer.validated_data.pop('password', None)
+            if password is not None:
+                user = serializer.instance
+                user.set_password(password)
+                user.save()
+            super().perform_update(serializer)
 
     class Record(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
         queryset = app_models.AwardRecord.objects
         serializer_class = app_serializers.Admin.Record
         permission_classes = (app_permissions.IsStaff,)
         lookup_field = 'id'
-        filter_fields = ('review__status',)
+        filterset_class = app_filters.Record
+        ordering = '-update_time'
+        search_fields = ('works_name', 'award_level', 'competition_record__name', 'teacher__name', 'students__name', 'main_student__name')
+
+        @action(methods=['GET'], detail=False)
+        def download(self, request):
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            file = services.Download.generate_zip(serializer.data, uuid.uuid4())
+            res = FileResponse(open(file, 'rb'), as_attachment=True, filename='打包.zip')
+            os.remove(file)
+            return res
